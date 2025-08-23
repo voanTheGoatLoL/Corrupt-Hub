@@ -1,0 +1,421 @@
+-- Corrupt Hub v1.0
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
+
+-- Settings
+local GAME_ID = game.PlaceId
+local REACH_DISTANCE = 8
+local SWING_DELAY = 0.15
+
+-- Variables
+local auraOn = false
+local lastSwing = 0
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Tool, Handle
+local reachEnabled = false
+
+-- ScreenGui
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CorruptHubUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = game:GetService("CoreGui")
+
+-- Topbar
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 400, 0, 300)
+MainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner", MainFrame)
+UICorner.CornerRadius = UDim.new(0,10)
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1,0,0,35)
+TitleBar.Position = UDim2.new(0,0,0,0)
+TitleBar.BackgroundColor3 = Color3.fromRGB(150,0,0)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Size = UDim2.new(1,-60,1,0)
+TitleText.Position = UDim2.new(0,10,0,0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "Corrupt Hub"
+TitleText.TextColor3 = Color3.fromRGB(255,255,255)
+TitleText.Font = Enum.Font.GothamBold
+TitleText.TextSize = 18
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Parent = TitleBar
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0,30,0,30)
+CloseButton.Position = UDim2.new(1,-30,0,2)
+CloseButton.BackgroundTransparency = 1
+CloseButton.Text = "✖"
+CloseButton.TextColor3 = Color3.fromRGB(255,255,255)
+CloseButton.TextSize = 16
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.Parent = TitleBar
+
+CloseButton.MouseButton1Click:Connect(function()
+	ScreenGui:Destroy()
+end)
+
+-- Make Draggable
+local function makeDraggable(frame, dragPart)
+	local dragging = false
+	local dragInput, dragStart, startPos
+	local function update(input)
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+	end
+	dragPart.InputBegan:Connect(function(input)
+		if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+			dragging=true
+			dragStart=input.Position
+			startPos=frame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState==Enum.UserInputState.End then dragging=false end
+			end)
+		end
+	end)
+	dragPart.InputChanged:Connect(function(input)
+		if input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch then
+			dragInput=input
+		end
+	end)
+	Players.LocalPlayer:GetMouse().Move:Connect(function(input)
+		if dragInput and dragging then update(dragInput) end
+	end)
+end
+makeDraggable(MainFrame,TitleBar)
+
+-- Game Info
+local GameLabel = Instance.new("TextLabel")
+GameLabel.Size = UDim2.new(1,0,0,20)
+GameLabel.Position = UDim2.new(0,0,0,35)
+GameLabel.BackgroundTransparency = 1
+GameLabel.TextColor3 = Color3.fromRGB(255,255,255)
+GameLabel.TextSize = 14
+GameLabel.Font = Enum.Font.Gotham
+GameLabel.TextXAlignment = Enum.TextXAlignment.Left
+GameLabel.Parent = MainFrame
+
+local success, gameInfo = pcall(function() return MarketplaceService:GetProductInfo(GAME_ID) end)
+GameLabel.Text = success and gameInfo.Name or "Game"
+
+-- Key System
+local validKeys = {
+	["ThanksForUsingMyScript"] = os.time() + 7*24*60*60, -- 7 days
+	["PaidOneHereThankYouForBuying_VozuptVHwRZRLhdeIfhIFWLTjQvpUDtGZ"] = math.huge -- Premium
+}
+
+local KeyFrame = Instance.new("Frame")
+KeyFrame.Size = UDim2.new(1,-20,0,100)
+KeyFrame.Position = UDim2.new(0,10,0,60)
+KeyFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+KeyFrame.Parent = MainFrame
+local KeyInput = Instance.new("TextBox")
+KeyInput.Size = UDim2.new(0.6,0,0,30)
+KeyInput.Position = UDim2.new(0,10,0,10)
+KeyInput.PlaceholderText = "Enter Key..."
+KeyInput.TextColor3 = Color3.fromRGB(255,255,255)
+KeyInput.BackgroundColor3 = Color3.fromRGB(50,50,50)
+KeyInput.Parent = KeyFrame
+local KeyButton = Instance.new("TextButton")
+KeyButton.Size = UDim2.new(0.35,0,0,30)
+KeyButton.Position = UDim2.new(0.62,0,0,10)
+KeyButton.Text = "Continue"
+KeyButton.BackgroundColor3 = Color3.fromRGB(150,0,0)
+KeyButton.TextColor3 = Color3.fromRGB(255,255,255)
+KeyButton.Parent = KeyFrame
+local GetKey = Instance.new("TextButton")
+GetKey.Size = UDim2.new(1,0,0,30)
+GetKey.Position = UDim2.new(0,0,0,50)
+GetKey.Text = "Get Key"
+GetKey.BackgroundColor3 = Color3.fromRGB(100,0,0)
+GetKey.TextColor3 = Color3.fromRGB(255,255,255)
+GetKey.Parent = KeyFrame
+
+GetKey.MouseButton1Click:Connect(function()
+	setclipboard("https://discord.gg/maYgjDxphw")
+	-- open browser
+	pcall(function()
+		game:HttpGet("https://discord.gg/maYgjDxphw")
+	end)
+end)
+
+KeyButton.MouseButton1Click:Connect(function()
+	local key = KeyInput.Text
+	if validKeys[key] and validKeys[key] > os.time() then
+		KeyFrame:Destroy()
+	else
+		warn("Invalid or expired key!")
+	end
+end)
+
+-- Tabs container
+local TabsFrame = Instance.new("Frame")
+TabsFrame.Size = UDim2.new(1,-20,1,-180)
+TabsFrame.Position = UDim2.new(0,10,0,160)
+TabsFrame.BackgroundTransparency = 1
+TabsFrame.Visible = false
+TabsFrame.Parent = MainFrame
+
+-- Create Tabs
+local tabNames = {"Pick A Skill","+1 Stats Every Second","Universal Reach Sword","Credits"}
+local tabs = {}
+local buttons = {}
+for i,name in ipairs(tabNames) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.25,0,0,25)
+	btn.Position = UDim2.new(0.25*(i-1),0,0,135)
+	btn.Text = name
+	btn.BackgroundColor3 = Color3.fromRGB(150,0,0)
+	btn.TextColor3 = Color3.fromRGB(255,255,255)
+	btn.Parent = MainFrame
+	buttons[i]=btn
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(1,0,1,0)
+	frame.BackgroundTransparency = 0.1
+	frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
+	frame.Visible=false
+	frame.Parent = TabsFrame
+	tabs[i]=frame
+	btn.MouseButton1Click:Connect(function()
+		for j,f in ipairs(tabs) do f.Visible=false end
+		frame.Visible=true
+	end)
+end
+
+-- After key is entered, show tabs
+KeyButton.MouseButton1Click:Connect(function()
+	local key = KeyInput.Text
+	if validKeys[key] and validKeys[key] > os.time() then
+		KeyFrame:Destroy()
+		TabsFrame.Visible=true
+		tabs[1].Visible=true
+	end
+end)
+
+-- Pick A Skill Feature
+do
+	local frame = tabs[1]
+	local spinsBtn = Instance.new("TextButton")
+	spinsBtn.Size = UDim2.new(0,200,0,35)
+	spinsBtn.Position = UDim2.new(0,10,0,10)
+	spinsBtn.Text = "INF Spins"
+	spinsBtn.BackgroundColor3 = Color3.fromRGB(150,0,0)
+	spinsBtn.TextColor3 = Color3.fromRGB(255,255,255)
+	spinsBtn.Parent = frame
+	spinsBtn.MouseButton1Click:Connect(function()
+		pcall(function()
+			LocalPlayer.SavedData.Spins.Value = 999999999
+		end)
+	end)
+	local revivesBtn = Instance.new("TextButton")
+	revivesBtn.Size = UDim2.new(0,200,0,35)
+	revivesBtn.Position = UDim2.new(0,10,0,50)
+	revivesBtn.Text = "INF Revives"
+	revivesBtn.BackgroundColor3 = Color3.fromRGB(150,0,0)
+	revivesBtn.TextColor3 = Color3.fromRGB(255,255,255)
+	revivesBtn.Parent = frame
+	revivesBtn.MouseButton1Click:Connect(function()
+		pcall(function()
+			LocalPlayer.SavedData.Revives.Value = 999999999
+		end)
+	end)
+	local vipBtn = Instance.new("TextButton")
+	vipBtn.Size = UDim2.new(0,200,0,35)
+	vipBtn.Position = UDim2.new(0,10,0,90)
+	vipBtn.Text = "Free VIP"
+	vipBtn.BackgroundColor3 = Color3.fromRGB(150,0,0)
+	vipBtn.TextColor3 = Color3.fromRGB(255,255,255)
+	vipBtn.Parent = frame
+	vipBtn.MouseButton1Click:Connect(function()
+		pcall(function()
+			LocalPlayer.SavedData.HasVIP.Value = true
+		end)
+	end)
+end
+
+-- +1 Stats Every Second Feature (Kill Aura)
+do
+	local frame = tabs[2]
+	local auraBtn = Instance.new("TextButton")
+	auraBtn.Size = UDim2.new(0,200,0,35)
+	auraBtn.Position = UDim2.new(0,10,0,10)
+	auraBtn.Text = "Kill Aura ON/OFF"
+	auraBtn.BackgroundColor3 = Color3.fromRGB(150,0,0)
+	auraBtn.TextColor3 = Color3.fromRGB(255,255,255)
+	auraBtn.Parent = frame
+	auraBtn.MouseButton1Click:Connect(function()
+		auraOn = not auraOn
+	end)
+end
+
+-- Universal Reach Sword Feature
+do
+	local frame = tabs[3]
+	local reachBtn = Instance.new("TextButton")
+	reachBtn.Size = UDim2.new(0,200,0,35)
+	reachBtn.Position = UDim2.new(0,10,0,10)
+	reachBtn.Text = "Reach Hits!"
+	reachBtn.BackgroundColor3 = Color3.fromRGB(150,0,0)
+	reachBtn.TextColor3 = Color3.fromRGB(255,255,255)
+	reachBtn.Parent = frame
+	reachBtn.MouseButton1Click:Connect(function()
+		reachEnabled = not reachEnabled
+	end)
+end
+
+-- Credits
+do
+	local frame = tabs[4]
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1,0,1,0)
+	lbl.BackgroundTransparency = 1
+	lbl.TextColor3 = Color3.fromRGB(255,255,255)
+	lbl.TextWrapped = true
+	lbl.Text = "Owner: corrupthub AKA voandagoat\nDeveloper: corrupthub AKA voandagoat"
+	lbl.Font = Enum.Font.Gotham
+	lbl.TextSize = 16
+	lbl.Parent = frame
+end
+
+-- Aura Logic
+local function isMob(model)
+	if not model then return false end
+	if not model:FindFirstChildOfClass("Humanoid") then return false end
+	local name = model.Name:lower()
+	return (name=="mob" or name=="mobs")
+end
+
+local function attackTarget(targetChar)
+	if not targetChar then return end
+	local hum = targetChar:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return end
+	for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+		if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
+			tool:Activate()
+			pcall(function()
+				firetouchinterest(tool.Handle,targetChar:FindFirstChild("Head") or targetChar.PrimaryPart,0)
+				firetouchinterest(tool.Handle,targetChar:FindFirstChild("Head") or targetChar.PrimaryPart,1)
+			end)
+		end
+	end
+end
+
+RunService.Heartbeat:Connect(function()
+	if not auraOn then return end
+	local char = LocalPlayer.Character
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <=0 then return end
+	local now = os.clock()
+	if now-lastSwing < SWING_DELAY then return end
+	lastSwing = now
+	-- Equip tools
+	for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
+		if tool:IsA("Tool") then
+			tool.Parent = char
+		end
+	end
+	-- Attack mobs
+	for _, model in ipairs(Workspace:GetChildren()) do
+		if isMob(model) then attackTarget(model) end
+	end
+	-- Attack players
+	for _, enemy in ipairs(Players:GetPlayers()) do
+		if enemy ~= LocalPlayer then attackTarget(enemy.Character) end
+	end
+end)
+
+-- Reach Logic
+local function updateTool()
+	local currentChar = LocalPlayer.Character or Character
+	if not currentChar then return end
+	for _, item in pairs(currentChar:GetChildren()) do
+		if item:IsA("Tool") and item:FindFirstChild("Handle") then
+			Tool=item
+			Handle=Tool.Handle
+			return
+		end
+	end
+	Tool=nil
+	Handle=nil
+end
+
+local function equipSword()
+	if Tool then return end
+	for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do
+		if item:IsA("Tool") and item:FindFirstChild("Handle") then
+			LocalPlayer.Character.Humanoid:EquipTool(item)
+			break
+		end
+	end
+end
+
+local function unequipSword()
+	local humanoid = (LocalPlayer.Character or Character):FindFirstChildOfClass("Humanoid")
+	if humanoid then humanoid:UnequipTools() end
+end
+
+local function faceNearest()
+	local currentChar = LocalPlayer.Character or Character
+	if not currentChar then return end
+	local hrp = currentChar:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	local closest, closestDist = nil, math.huge
+	for _, player in pairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local theirHRP = player.Character.HumanoidRootPart
+			local dist = (theirHRP.Position - hrp.Position).Magnitude
+			if dist < closestDist and dist <= REACH_DISTANCE + 4 then
+				closest = theirHRP
+				closestDist = dist
+			end
+		end
+	end
+	if closest then
+		equipSword()
+		hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(closest.Position.X, hrp.Position.Y, closest.Position.Z))
+	else
+		unequipSword()
+	end
+end
+
+local function simulateTouch()
+	if not Tool or not Handle then return end
+	for _, player in pairs(Players:GetPlayers()) do
+		if player~=LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local theirChar = player.Character
+			local theirHRP = theirChar.HumanoidRootPart
+			local dist = (Handle.Position - theirHRP.Position).Magnitude
+			if dist <= REACH_DISTANCE then
+				for _, part in ipairs(theirChar:GetDescendants()) do
+					if part:IsA("BasePart") then
+						firetouchinterest(Handle,part,0)
+						firetouchinterest(Handle,part,1)
+					end
+				end
+			end
+		end
+	end
+end
+
+RunService.RenderStepped:Connect(function()
+	updateTool()
+	if reachEnabled then
+		faceNearest()
+		if Tool then simulateTouch() end
+	end
+end)
